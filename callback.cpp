@@ -5,6 +5,7 @@
  * Every message ID has a callback associated with it to
  * receive and interpret the message payload.
  */
+
 void sbp_pos_llh_callback(u16 sender_id, u8 len, u8 msg[], void *context)
 {
   msg_pos_llh_t pos_llh = *(msg_pos_llh_t *)msg;
