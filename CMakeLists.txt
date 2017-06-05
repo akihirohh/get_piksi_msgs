@@ -12,5 +12,8 @@ include_directories(${LIBSERIALPORT_INCLUDE_DIRS})
 
 link_directories("/usr/local/lib/")
 include_directories("/usr/local/include/")
+include_directories("/usr/local/include/")
 
-target_link_libraries(libsbp_example serialport sbp)
+add_library(callback callback.c)
+target_link_libraries(callback sbp)
+target_link_libraries(libsbp_example callback serialport sbp)
