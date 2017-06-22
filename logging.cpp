@@ -38,23 +38,27 @@ int millis(timeval tStart)
 }
 
 /* SBP structs that messages from Piksi will feed. */
-msg_pos_llh_t      pos_llh;
-msg_baseline_ned_t baseline_ned;
-msg_vel_ned_t      vel_ned;
-msg_dops_t         dops;
-msg_gps_time_t     gps_time;
-msg_utc_time_t     utc_time;
+msg_pos_llh_t         pos_llh;
+msg_baseline_ned_t    baseline_ned;
+msg_vel_ned_t         vel_ned;
+msg_dops_t            dops;
+msg_gps_time_t        gps_time;
+msg_utc_time_t        utc_time;
+msg_pos_ecef_t        pos_ecef;
+msg_baseline_ecef_t   baseline_ecef;
 
 /*
 * SBP callback nodes must be statically allocated. Each message ID / callback
 * pair must have a unique sbp_msg_callbacks_node_t associated with it.
 */
-sbp_msg_callbacks_node_t pos_llh_node;
+sbp_msg_callbacks_node_t baseline_ecef_node;
 sbp_msg_callbacks_node_t baseline_ned_node;
-sbp_msg_callbacks_node_t vel_ned_node;
 sbp_msg_callbacks_node_t dops_node;
 sbp_msg_callbacks_node_t gps_time_node;
+sbp_msg_callbacks_node_t pos_llh_node;
+sbp_msg_callbacks_node_t pos_ecef_node;
 sbp_msg_callbacks_node_t utc_time_node;
+sbp_msg_callbacks_node_t vel_ned_node;
 
 
 /*
@@ -63,54 +67,38 @@ sbp_msg_callbacks_node_t utc_time_node;
  * receive and interpret the message payload.
  */
 
-void sbp_gps_time_callback(u16 sender_id, u8 len, u8 msg[], void *context)
-{
-  gps_time = *(msg_gps_time_t *)msg;
-}
 
-void sbp_pos_llh_callback(u16 sender_id, u8 len, u8 msg[], void *context)
+void sbp_baseline_ecef_callback(u16 sender_id, u8 len, u8 msg[], void *context)
 {
-  pos_llh = *(msg_pos_llh_t *)msg;
-  printf("\n############################\n");
-  printf( "Absolute Position:\n");
-  printf( "\tLatitude\t: %4.10lf", pos_llh.lat);
-  printf( "\n\tLongitude\t: %4.10lf", pos_llh.lon);
-  printf( "\n\tHeight\t\t: %4.10lf", pos_llh.height);
-  printf( "\n\tSatellites\t: %02d\n", pos_llh.n_sats);
-  printf( "\n");
+  baseline_ecef = *(msg_baseline_ecef_t *)msg;
 }
 void sbp_baseline_ned_callback(u16 sender_id, u8 len, u8 msg[], void *context)
 {
   baseline_ned = *(msg_baseline_ned_t *)msg;
-  printf( "Baseline (mm):\n");
-  printf( "\tNorth\t\t: %6d\n", (int)baseline_ned.n);
-  printf( "\tEast\t\t: %6d\n", (int)baseline_ned.e);
-  printf( "\tDown\t\t: %6d\n", (int)baseline_ned.d);
-  printf( "\n");
-}
-void sbp_vel_ned_callback(u16 sender_id, u8 len, u8 msg[], void *context)
-{
-  vel_ned = *(msg_vel_ned_t *)msg;
-  printf( "Velocity (mm/s):\n");
-  printf( "\tNorth\t\t: %6d\n", (int)vel_ned.n);
-  printf( "\tEast\t\t: %6d\n", (int)vel_ned.e);
-  printf( "\tDown\t\t: %6d\n", (int)vel_ned.d);
-  printf( "\n");
-
 }
 void sbp_dops_callback(u16 sender_id, u8 len, u8 msg[], void *context)
 {
   dops = *(msg_dops_t *)msg;
-  printf("Dilution of Precision:");
-  printf( "\n\tGDOP\t\t: %4.2f", ((float)dops.gdop/100));
-  printf( "\n\tHDOP\t\t: %4.2f", ((float)dops.hdop/100));
-  printf( "\n\tPDOP\t\t: %4.2f", ((float)dops.pdop/100));
-  printf( "\n\tTDOP\t\t: %4.2f", ((float)dops.tdop/100));
-  printf( "\n\tVDOP\t\t: %4.2f\n", ((float)dops.vdop/100));
+}
+void sbp_gps_time_callback(u16 sender_id, u8 len, u8 msg[], void *context)
+{
+  gps_time = *(msg_gps_time_t *)msg;
+}
+void sbp_pos_ecef_callback(u16 sender_id, u8 len, u8 msg[], void *context)
+{
+  pos_ecef = *(msg_pos_ecef_t *)msg;
+}
+void sbp_pos_llh_callback(u16 sender_id, u8 len, u8 msg[], void *context)
+{
+  pos_llh = *(msg_pos_llh_t *)msg;
 }
 void sbp_utc_callback(u16 sender_id, u8 len, u8 msg[], void *context)
 {
   utc_time = *(msg_utc_time_t *)msg;
+}
+void sbp_vel_ned_callback(u16 sender_id, u8 len, u8 msg[], void *context)
+{
+  vel_ned = *(msg_vel_ned_t *)msg;
 }
 
 void sbp_setup(sbp_state_t *sbp_state)
@@ -119,14 +107,15 @@ void sbp_setup(sbp_state_t *sbp_state)
 	
   sbp_state_init(sbp_state);
 
-  /* Register a node and callback, and associate them with a specific message ID. */
-	
-  sbp_register_callback(sbp_state, SBP_MSG_GPS_TIME, &sbp_gps_time_callback, NULL, &gps_time_node);
-  sbp_register_callback(sbp_state, SBP_MSG_POS_LLH, &sbp_pos_llh_callback, NULL, &pos_llh_node);
+  /* Register a node and callback, and associate them with a specific message ID. */	
+  sbp_register_callback(sbp_state, SBP_MSG_BASELINE_ECEF, &sbp_baseline_ecef_callback, NULL, &baseline_ecef_node);
   sbp_register_callback(sbp_state, SBP_MSG_BASELINE_NED, &sbp_baseline_ned_callback, NULL, &baseline_ned_node);
-  sbp_register_callback(sbp_state, SBP_MSG_VEL_NED, &sbp_vel_ned_callback, NULL, &vel_ned_node);
   sbp_register_callback(sbp_state, SBP_MSG_DOPS, &sbp_dops_callback,NULL, &dops_node);
+  sbp_register_callback(sbp_state, SBP_MSG_GPS_TIME, &sbp_gps_time_callback, NULL, &gps_time_node);
+  sbp_register_callback(sbp_state, SBP_MSG_POS_ECEF, &sbp_pos_ecef_callback, NULL, &pos_ecef_node);
+  sbp_register_callback(sbp_state, SBP_MSG_POS_LLH, &sbp_pos_llh_callback, NULL, &pos_llh_node);
   sbp_register_callback(sbp_state, SBP_MSG_UTC_TIME, &sbp_utc_callback, NULL, &utc_time_node);
+  sbp_register_callback(sbp_state, SBP_MSG_VEL_NED, &sbp_vel_ned_callback, NULL, &vel_ned_node);
 }
 
 char *serial_port_name = NULL;
@@ -186,9 +175,9 @@ int main(int argc, char* argv[])
 {	
 	std::string filename;
 	filename.append(currentDateTime());
-	filename.append("_gps.txt");
+	filename.append("_vars.txt");
 	std::fstream gps_file(filename.c_str(), std::ios_base::out);
-  gps_file << "utc_time_tow | utc_time_flags | utc_time_year |  utc_time_month | utc_time_day | utc_time_hours | utc_time_minutes | utc_time_seconds | utc_time_ns | pos_llh_tow | pos_llh_flags | pos_llh_h_accuracy | pos_llh_v_accuracy |  pos_llh_lat | pos_llh_lon | pos_llh_n_sats | baseline_ned_tow | baseline_ned_flags |  baseline_ned_n | baseline_ned_e | baseline_ned_d | dops_tow | dops_flags | dops_gdop | dops_pdop | dops_tdop | dops_hdop | dops_vdop " <<  std::endl;
+  gps_file << "utc_time_tow | utc_time_flags | utc_time_year |  utc_time_month | utc_time_day | utc_time_hours | utc_time_minutes | utc_time_seconds | utc_time_ns | pos_llh_tow | pos_llh_flags | pos_llh_h_accuracy | pos_llh_v_accuracy |  pos_llh_lat | pos_llh_lon | pos_llh_n_sats | baseline_ned_tow | baseline_ned_flags |  baseline_ned_n | baseline_ned_e | baseline_ned_d | dops_tow | dops_flags | dops_gdop | dops_pdop | dops_tdop | dops_hdop | dops_vdop | pos_ecef.tow |pos_ecef.flags | pos_ecef.n_sats | pos_ecef.x | pos_ecef.y | pos_ecef.z | baseline_ecef.tow | baseline_ecef.flags |baseline_ecef.n_sats | baseline_ecef.x | baseline_ecef.y |baseline_ecef.z | baseline_ecef.accuracy " <<  std::endl;
 	int looptime;
 
 	struct timeval t;
@@ -243,10 +232,30 @@ int opt;
 	{
     sbp_process(&s, &piksi_port_read);
 		looptime = millis(t);
+    printf("\n############################\n");
+    printf( "Absolute Position:\n");
+    printf( "\tLatitude: %4.10lf", pos_llh.lat);
+    printf( "\tLongitude: %4.10lf", pos_llh.lon);
+    printf( "\tHeight: %4.10lf", pos_llh.height);
+    printf( "\tSatellites: %02d", pos_llh.n_sats);
+    printf( "\n");
+    printf( "Position ECEF (m):\n");
+    printf( "\tx: %4.3f", pos_ecef.x);
+    printf( "\ty: %4.3f", pos_ecef.y);
+    printf( "\tz: %4.3f", pos_ecef.z);
+    printf( "\n");
+    printf( "Baseline ECEF (m):\n");
+    printf( "\tx: %4.3f", (double)baseline_ecef.x/1000);
+    printf( "\ty: %4.3f", (double)baseline_ecef.y/1000);
+    printf( "\tz: %4.3f", (double)baseline_ecef.z/1000);
+    printf( "\n");
 		if (looptime > DESIRED_LOOP_TIME)
 		{
 			gettimeofday(&t,NULL);
-			gps_file << utc_time.tow << "|" << (int)utc_time.flags << "|" << utc_time.year << "|" << (int) utc_time.month << "|" << (int)utc_time.day << "|" << (int)utc_time.hours << "|" << (int)utc_time.minutes << "|" << (int)utc_time.seconds << "|" << utc_time.ns << "|" << pos_llh.tow << "|" << (int)pos_llh.flags << "|" << pos_llh.h_accuracy << "|" << pos_llh.v_accuracy << "|" <<  std::fixed << std::setprecision(10) << pos_llh.lat << "|" << std::fixed << std::setprecision(10) << pos_llh.lon << "|" << (int)pos_llh.n_sats << "|" << baseline_ned.tow << "|" << (int)baseline_ned.flags << "|" <<  baseline_ned.n << "|" << baseline_ned.e << "|" << baseline_ned.d << "|" << dops.tow << "|" << (int)dops.flags << "|" << dops.gdop << "|" << dops.pdop << "|" << dops.tdop << "|" << dops.hdop << "|" << dops.vdop <<  std::endl;
+      if ((int)pos_llh.flags != 0)
+      {
+        gps_file << utc_time.tow << "|" << (int)utc_time.flags << "|" << utc_time.year << "|" << (int) utc_time.month << "|" << (int)utc_time.day << "|" << (int)utc_time.hours << "|" << (int)utc_time.minutes << "|" << (int)utc_time.seconds << "|" << utc_time.ns << "|" << pos_llh.tow << "|" << (int)pos_llh.flags << "|" << pos_llh.h_accuracy << "|" << pos_llh.v_accuracy << "|" <<  std::fixed << std::setprecision(10) << pos_llh.lat << "|" << std::fixed << std::setprecision(10) << pos_llh.lon << "|" << (int)pos_llh.n_sats << "|" << baseline_ned.tow << "|" << (int)baseline_ned.flags << "|" <<  baseline_ned.n << "|" << baseline_ned.e << "|" << baseline_ned.d << "|" << dops.tow << "|" << (int)dops.flags << "|" << dops.gdop << "|" << dops.pdop << "|" << dops.tdop << "|" << dops.hdop << "|" << dops.vdop << "|" << pos_ecef.tow << "|" << (int)pos_ecef.flags << "|" << (int) pos_ecef.n_sats << "|" << pos_ecef.x << "|" << pos_ecef.y << "|" << pos_ecef.z << "|" << baseline_ecef.tow << "|" << (int)baseline_ecef.flags << "|" << (int)baseline_ecef.n_sats << "|" << baseline_ecef.x << "|" << baseline_ecef.y << "|" <<baseline_ecef.z << "|" << baseline_ecef.accuracy << std::endl;
+      }
 		}
 	}
 
