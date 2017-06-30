@@ -4,6 +4,7 @@
 #include <fstream>
 #include <string>
 #include <iomanip>
+#include <iostream>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +14,11 @@
 #include <libserialport.h>
 
 #include <libsbp/sbp.h>
+#include <libsbp/system.h>
+#include <libsbp/observation.h>
+#include <libsbp/piksi.h>
+#include <libsbp/tracking.h>
+#include <libsbp/imu.h>
 #include <libsbp/system.h>
 #include "callback.h"
 #define DESIRED_LOOP_TIME 50
@@ -38,14 +44,21 @@ int millis(timeval tStart)
 }
 
 /* SBP structs that messages from Piksi will feed. */
-msg_pos_llh_t         pos_llh;
-msg_baseline_ned_t    baseline_ned;
-msg_vel_ned_t         vel_ned;
-msg_dops_t            dops;
-msg_gps_time_t        gps_time;
-msg_utc_time_t        utc_time;
-msg_pos_ecef_t        pos_ecef;
-msg_baseline_ecef_t   baseline_ecef;
+msg_pos_llh_t                   pos_llh;
+msg_baseline_ned_t              baseline_ned;
+msg_vel_ned_t                   vel_ned;
+msg_dops_t                      dops;
+msg_gps_time_t                  gps_time;
+msg_utc_time_t                  utc_time;
+msg_pos_ecef_t                  pos_ecef;
+msg_baseline_ecef_t             baseline_ecef;
+
+msg_base_pos_llh_t              base_pos_llh;
+msg_uart_state_t                uart_state;
+msg_tracking_state_detailed_t   tracking_state_detailed;
+msg_imu_raw_t                   imu_raw;
+msg_imu_aux_t                   imu_aux;
+msg_dgnss_status_t              dgnss_status;
 
 /*
 * SBP callback nodes must be statically allocated. Each message ID / callback
@@ -60,6 +73,12 @@ sbp_msg_callbacks_node_t pos_ecef_node;
 sbp_msg_callbacks_node_t utc_time_node;
 sbp_msg_callbacks_node_t vel_ned_node;
 
+sbp_msg_callbacks_node_t base_pos_llh_node;
+sbp_msg_callbacks_node_t uart_state_node;
+sbp_msg_callbacks_node_t tracking_state_detailed_node;
+sbp_msg_callbacks_node_t imu_raw_node;
+sbp_msg_callbacks_node_t imu_aux_node;
+sbp_msg_callbacks_node_t dgnss_status_node;
 
 /*
  * Callback functions to interpret SBP messages.
@@ -67,6 +86,8 @@ sbp_msg_callbacks_node_t vel_ned_node;
  * receive and interpret the message payload.
  */
 
+
+static u8 last_msg[256];
 
 void sbp_baseline_ecef_callback(u16 sender_id, u8 len, u8 msg[], void *context)
 {
@@ -101,6 +122,33 @@ void sbp_vel_ned_callback(u16 sender_id, u8 len, u8 msg[], void *context)
   vel_ned = *(msg_vel_ned_t *)msg;
 }
 
+void sbp_base_pos_llh_callback(u16 sender_id, u8 len, u8 msg[], void *context)
+{
+  base_pos_llh = *(msg_base_pos_llh_t *)((void *) msg + 6);
+}
+void sbp_uart_state_callback(u16 sender_id, u8 len, u8 msg[], void *context)
+{
+  uart_state = *(msg_uart_state_t *)((void *) msg + 6);
+}
+
+void sbp_tracking_state_detailed_callback(u16 sender_id, u8 len, u8 msg[], void *context)
+{
+  tracking_state_detailed = *(msg_tracking_state_detailed_t *)((void *) msg + 6);
+}
+
+void sbp_imu_raw_callback(u16 sender_id, u8 len, u8 msg[], void *context)
+{
+  imu_raw = *(msg_imu_raw_t *)((void *) msg + 6);
+}
+void sbp_imu_aux_callback(u16 sender_id, u8 len, u8 msg[], void *context)
+{
+  imu_aux = *(msg_imu_aux_t *)((void *) msg + 6);
+}
+void sbp_dgnss_status_callback(u16 sender_id, u8 len, u8 msg[], void *context)
+{
+  dgnss_status = *(msg_dgnss_status_t *)((void *) msg + 6);
+}
+
 void sbp_setup(sbp_state_t *sbp_state)
 {
   /* SBP parser state must be initialized before sbp_process is called. */
@@ -116,7 +164,13 @@ void sbp_setup(sbp_state_t *sbp_state)
   sbp_register_callback(sbp_state, SBP_MSG_POS_LLH, &sbp_pos_llh_callback, NULL, &pos_llh_node);
   sbp_register_callback(sbp_state, SBP_MSG_UTC_TIME, &sbp_utc_callback, NULL, &utc_time_node);
   sbp_register_callback(sbp_state, SBP_MSG_VEL_NED, &sbp_vel_ned_callback, NULL, &vel_ned_node);
+
+  sbp_register_callback(sbp_state, SBP_MSG_BASE_POS_LLH, &sbp_base_pos_llh_callback, NULL, &base_pos_llh_node);
+  sbp_register_callback(sbp_state, SBP_MSG_UART_STATE, &sbp_uart_state_callback, NULL, &uart_state_node);
+  sbp_register_callback(sbp_state, SBP_MSG_TRACKING_STATE_DETAILED, &sbp_tracking_state_detailed_callback, NULL, &tracking_state_detailed_node);
+  sbp_register_callback(sbp_state, SBP_MSG_DGNSS_STATUS, &sbp_dgnss_status_callback, NULL, &dgnss_status_node);
 }
+
 
 char *serial_port_name = NULL;
 struct sp_port *piksi_port = NULL;
@@ -177,7 +231,7 @@ int main(int argc, char* argv[])
 	filename.append(currentDateTime());
 	filename.append("_vars.txt");
 	std::fstream gps_file(filename.c_str(), std::ios_base::out);
-  gps_file << "utc_time_tow | utc_time_flags | utc_time_year |  utc_time_month | utc_time_day | utc_time_hours | utc_time_minutes | utc_time_seconds | utc_time_ns | pos_llh_tow | pos_llh_flags | pos_llh_h_accuracy | pos_llh_v_accuracy |  pos_llh_lat | pos_llh_lon | pos_llh_n_sats | baseline_ned_tow | baseline_ned_flags |  baseline_ned_n | baseline_ned_e | baseline_ned_d | dops_tow | dops_flags | dops_gdop | dops_pdop | dops_tdop | dops_hdop | dops_vdop | pos_ecef.tow |pos_ecef.flags | pos_ecef.n_sats | pos_ecef.x | pos_ecef.y | pos_ecef.z | baseline_ecef.tow | baseline_ecef.flags |baseline_ecef.n_sats | baseline_ecef.x | baseline_ecef.y |baseline_ecef.z | baseline_ecef.accuracy " <<  std::endl;
+  gps_file << "utc_time_tow | utc_time_flags | utc_time_year |  utc_time_month | utc_time_day | utc_time_hours | utc_time_minutes | utc_time_seconds | utc_time_ns | pos_llh_tow | pos_llh_flags | pos_llh_h_accuracy | pos_llh_v_accuracy |  pos_llh_lat | pos_llh_lon | pos_llh_n_sats | baseline_ned_tow | baseline_ned_flags |  baseline_ned_n | baseline_ned_e | baseline_ned_d | dops_tow | dops_flags | dops_gdop | dops_pdop | dops_tdop | dops_hdop | dops_vdop | pos_ecef.tow |pos_ecef.flags | pos_ecef.n_sats | pos_ecef.x | pos_ecef.y | pos_ecef.z | baseline_ecef.tow | baseline_ecef.flags |baseline_ecef.n_sats | baseline_ecef.x | baseline_ecef.y |baseline_ecef.z | baseline_ecef.accuracy | base_pos_llh.lat | base_pos_llh.lon | base_pos_llh.height | uart_state.uart_a.crc_error_count | uart_state.uart_a.io_error_count | uart_state.uart_a.tx_buffer_level | uart_state.uart_b.crc_error_count | uart_state.uart_b.io_error_count | uart_state.uart_b.tx_buffer_level | uart_state.uart_ftdi.crc_error_count | uart_state.uart_ftdi.io_error_count | uart_state.uart_ftdi.tx_buffer_level |  uart_state.latency.current | tracking_state_detailed.sid.sat | tracking_state_detailed.sid.code | tracking_state_detailed.sync_flags |  tracking_state_detailed.tow_flags  |  tracking_state_detailed.track_flags |  tracking_state_detailed.nav_flags |  tracking_state_detailed.pset_flags |  tracking_state_detailed.misc_flags | imu_raw.acc_x | imu_raw.acc_y | imu_raw.acc_z | imu_raw.gyr_x | imu_raw.gyr_y | imu_raw.gyr_z | imu_aux.temp | dgnss_status.flags | dgnss_status.latency | dgnss_status.num_signals | dgnss_status.source\n";
 	int looptime;
 
 	struct timeval t;
@@ -254,7 +308,9 @@ int opt;
 			gettimeofday(&t,NULL);
       if ((int)pos_llh.flags != 0)
       {
-        gps_file << utc_time.tow << "|" << (int)utc_time.flags << "|" << utc_time.year << "|" << (int) utc_time.month << "|" << (int)utc_time.day << "|" << (int)utc_time.hours << "|" << (int)utc_time.minutes << "|" << (int)utc_time.seconds << "|" << utc_time.ns << "|" << pos_llh.tow << "|" << (int)pos_llh.flags << "|" << pos_llh.h_accuracy << "|" << pos_llh.v_accuracy << "|" <<  std::fixed << std::setprecision(10) << pos_llh.lat << "|" << std::fixed << std::setprecision(10) << pos_llh.lon << "|" << (int)pos_llh.n_sats << "|" << baseline_ned.tow << "|" << (int)baseline_ned.flags << "|" <<  baseline_ned.n << "|" << baseline_ned.e << "|" << baseline_ned.d << "|" << dops.tow << "|" << (int)dops.flags << "|" << dops.gdop << "|" << dops.pdop << "|" << dops.tdop << "|" << dops.hdop << "|" << dops.vdop << "|" << pos_ecef.tow << "|" << (int)pos_ecef.flags << "|" << (int) pos_ecef.n_sats << "|" << pos_ecef.x << "|" << pos_ecef.y << "|" << pos_ecef.z << "|" << baseline_ecef.tow << "|" << (int)baseline_ecef.flags << "|" << (int)baseline_ecef.n_sats << "|" << baseline_ecef.x << "|" << baseline_ecef.y << "|" <<baseline_ecef.z << "|" << baseline_ecef.accuracy << std::endl;
+        gps_file << utc_time.tow << "|" << (int)utc_time.flags << "|" << utc_time.year << "|" << (int) utc_time.month << "|" << (int)utc_time.day << "|" << (int)utc_time.hours << "|" << (int)utc_time.minutes << "|" << (int)utc_time.seconds << "|" << utc_time.ns << "|" << pos_llh.tow << "|" << (int)pos_llh.flags << "|" << pos_llh.h_accuracy << "|" << pos_llh.v_accuracy << "|" <<  std::fixed << std::setprecision(10) << pos_llh.lat << "|" << std::fixed << std::setprecision(10) << pos_llh.lon << "|" << (int)pos_llh.n_sats << "|" << baseline_ned.tow << "|" << (int)baseline_ned.flags << "|" <<  baseline_ned.n << "|" << baseline_ned.e << "|" << baseline_ned.d << "|" << dops.tow << "|" << (int)dops.flags << "|" << dops.gdop << "|" << dops.pdop << "|" << dops.tdop << "|" << dops.hdop << "|" << dops.vdop << "|" << pos_ecef.tow << "|" << (int)pos_ecef.flags << "|" << (int) pos_ecef.n_sats << "|" << pos_ecef.x << "|" << pos_ecef.y << "|" << pos_ecef.z << "|" << baseline_ecef.tow << "|" << (int)baseline_ecef.flags << "|" << (int)baseline_ecef.n_sats << "|" << baseline_ecef.x << "|" << baseline_ecef.y << "|" << baseline_ecef.z << "|" << baseline_ecef.accuracy << "|" << base_pos_llh.lat << "|" << base_pos_llh.lon << "|" << base_pos_llh.height << "|" << uart_state.uart_a.crc_error_count << "|" << uart_state.uart_a.io_error_count << "|" << (int)uart_state.uart_a.tx_buffer_level << "|" << uart_state.uart_b.crc_error_count << "|" << uart_state.uart_b.io_error_count << "|" << (int)uart_state.uart_b.tx_buffer_level << "|" << uart_state.uart_ftdi.crc_error_count << "|" << uart_state.uart_ftdi.io_error_count << "|" << (int)uart_state.uart_ftdi.tx_buffer_level << "|" <<  uart_state.latency.current << "|" << tracking_state_detailed.sid.sat << "|" << (int)tracking_state_detailed.sid.code << "|" << (int)tracking_state_detailed.sync_flags << "|" << (int) tracking_state_detailed.tow_flags  << "|" << (int) tracking_state_detailed.track_flags << "|" << (int) tracking_state_detailed.nav_flags << "|" << (int) tracking_state_detailed.pset_flags << "|" << (int) tracking_state_detailed.misc_flags << "|" << imu_raw.acc_x << "|" << imu_raw.acc_y << "|" << imu_raw.acc_z << "|" << imu_raw.gyr_x << "|" << imu_raw.gyr_y << "|" << imu_raw.gyr_z << "|" << imu_aux.temp << "|"; 
+          gps_file << (int) dgnss_status.flags << "|" << dgnss_status.latency << "|" << (int) dgnss_status.num_signals << "|" << dgnss_status.source << "|";
+          gps_file <<  std::endl;
       }
 		}
 	}
